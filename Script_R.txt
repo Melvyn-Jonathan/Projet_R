@@ -1,0 +1,259 @@
+library(dplyr)
+library (questionr)
+library (tidyverse)
+library(ggplot2)
+getwd()
+data <- read_csv("C:/Users/Melvyn/Downloads/luxury_cosmetics_fraud_analysis_2025.csv")
+                 
+#Pour des raisons pratiques je change le nom de mes données
+
+data <- luxury_cosmetics_fraud_analysis_2025
+
+head (data)
+
+#Je retire l'adresse Ip des clients 
+
+data <- data %>% select(-IP_Address)
+
+#Me permet de verifier s'il existe ou non des valeurs manquantes
+
+colSums(is.na(data))
+
+#Il en existe je vais donc retirer les informations de ces lignes pour éviter d'introduire des biais 
+
+data <- data %>% 
+  filter(!is.na(Customer_Age))
+data <- data %>% 
+  filter(!is.na(Customer_Loyalty_Tier))
+data <- data %>% 
+  filter(!is.na(Payment_Method))
+
+#donne les statistiques descriptives 
+
+summary(data)
+table(data$Fraud_Flag)
+
+
+
+
+#Permet de séparer les informations contenues dans Store_ID (commande trouvé avec l'aide d'internet)
+
+# Création des nouvelles colonnes store_type et store_ville
+
+data <- data %>%
+  separate(Store_ID, into = c("store_type", "store_ville"), sep = "-", remove = FALSE)
+
+# affichage des nouvelles colonnes 
+table(data$store_type)
+table(data$store_ville)
+table(data$Location)
+
+
+
+# permet de voir quelle type de store il y a dans les villes
+
+data %>%
+  count(Location, store_type, sort = TRUE)
+#permet de voir le nombre total de boutiques qui à  Pariscomme boutique d'origine avec son type le plus élevé
+data %>%
+  filter(store_ville == "PARIS") %>%
+  count(store_type)
+
+
+#Tableau croisé permettant de voir le nombre de fraude detecté  par ville 
+
+tab_location <- table(data$Location, data$Fraud_Flag)
+
+# nous donne le pourcentage de fraude associé aux villes
+lprop(tab_location)
+cprop(tab_location)
+
+
+
+#Permet de regrouper toute les fraudes dans une seule colonne 
+
+fraude_data <- data %>% filter(Fraud_Flag == 1)
+
+
+# Graphique en bâtons des fraudes par ville et par type de boutique  avec store_ville (avec l'aide d'internet car le nom des villes était illisible)
+
+
+ggplot(fraude_data, aes(x = store_ville, fill = store_type)) +
+  geom_bar(position = "dodge") +
+  labs(
+    title = "Fraudes par ville et type de boutique",
+    x = "Ville",
+    y = "Nombre de fraudes",
+    fill = "Type de boutique"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) #<- cette commande +
+  ylim(0, 10)  
+  
+  # graphique en baton des fraudes par ville avec Location 
+  ggplot(fraude_data, aes(x = Location, fill = store_type)) +
+    geom_bar(position = "dodge") +
+    labs(
+      title = "Fraudes par ville et type de boutique",
+      x = "Ville",
+      y = "Nombre de fraudes",
+      fill = "Type de boutique"
+    ) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+  ylim(0, 10)  
+  
+  #Nous donne le nombre de fraude par ville de transaction
+  
+  data %>%
+    filter(Fraud_Flag == 1) %>%
+    count(Location, sort = TRUE)
+ 
+   #nous donne le nombre de fraude par ville d'origine 
+  data %>%
+    filter(Fraud_Flag == 1) %>%
+    count(store_ville, sort = TRUE)
+  
+  #On compare le montant le plus élevé dans les fraudes et non fraudes on remarque que cest sensiblement le meme montant 
+  
+  data %>%
+    filter(Fraud_Flag == 1) %>%
+    filter(Purchase_Amount == max(Purchase_Amount, na.rm = TRUE)) %>%
+    select(Purchase_Amount, Fraud_Flag)
+  
+  #permet de me donner le moyen de paiement le plus utilisé , et le nombre de fois que celui ci a été utilisé
+  
+  data %>%
+    count(Payment_Method, sort = TRUE) %>%
+    slice(1)
+  
+  
+  #me permet d'avoir la repartition par moyen de paiement utilisé
+  
+  data %>%
+    count(Payment_Method) %>% 
+    mutate(pourcentage = 100 * n / sum(n)) %>%
+    arrange(desc(pourcentage))
+  
+  #permet d'avoir  le moyen de paiement le plus utilisé par ville 
+  paiement_ville <- data %>%
+    group_by(Location, Payment_Method) %>%
+    summarise(nb = n()) %>% 
+    group_by(Location) %>%
+    slice_max(nb, n = 1)
+  
+  print(paiement_ville)
+  
+  
+  
+  
+#boite à moustache du montant d'achat  par ville
+  
+  data %>% 
+    ggplot(aes(x = Location, y = Purchase_Amount)) +
+    geom_boxplot(fill = "blue") +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(title = "Montant par ville")
+  
+  #boite à moustache  du montantd'achat par type de boutique
+  
+  data %>% 
+    ggplot(aes(x = store_type, y = Purchase_Amount)) +
+    geom_boxplot(fill = "lightgreen") +
+    labs(title = "Montant par type de boutique")
+
+ #Calcul du montant  moyen  par ville
+  moyennes_ville <- data %>%
+    group_by(Location) %>%
+    summarise(moyenne_ville = mean(Purchase_Amount, na.rm = TRUE)) %>%
+     arrange(desc(moyenne_ville)) 
+     print(moyennes_ville)
+  
+  #graphique du montant moyen par ville 
+  barplot(moyennes_ville$moyenne_ville,
+          names.arg = moyennes_ville$Location,
+          main = "Montant moyen d'achat par ville",
+          xlab = "Ville",
+          ylab = "Montant moyen ($)",
+          col = "red",
+          las = 2,  
+          ylim = c(0, max(moyennes_ville$moyenne_ville, na.rm = TRUE) * 1.1))<-#permet d'éviter que la barre la plus haute  touche le bord
+  
+  #Calcule du montant d'achat  moyen par boutique 
+  moyenne_boutique <- data %>%
+    group_by(store_type) %>%
+    summarise(moyenne_boutique = mean(Purchase_Amount, na.rm = TRUE)) %>%
+    arrange(desc(moyenne_boutique))
+ 
+   #affiche le montant d'achat moyen par boutique 
+  print(moyenne_boutique)
+  
+  #permet de connaitre l'affluence moyenne par ville 
+  barplot(tapply(data$Footfall_Count, data$Location, mean, na.rm = TRUE),
+          main = "Nombre moyen de visiteurs par ville",
+          xlab = "Ville",
+          ylab = "Footfall moyen",
+          las = 3,
+          col = "grey")
+  moyenne_aff <- data %>%
+    group_by(Location) %>%
+    summarise(moyenne_aff = mean(Footfall_Count, na.rm = TRUE)) %>%
+    arrange(desc(moyenne_aff))
+  print ( moyenne_aff)
+  
+
+  #on cherche à voir les 3 villes avec le taux de fraude le plus haut pour cela il faut donc prendre toute les fraudes de cette ville reporté aux nombres de transactions effectuées 
+  
+  fraude_par_ville <- data %>%
+    group_by(Location) %>% 
+    summarise(
+      nb_fraudes = sum(Fraud_Flag == 1, na.rm = TRUE),
+      nb_transactions = n(),
+      nb_boutiques = n_distinct(Store_ID)
+    ) %>%
+    mutate(
+      taux_fraude = 100 * nb_fraudes / nb_transactions,
+      fraude_par_boutique = taux_fraude / nb_boutiques
+    ) %>%
+    arrange(desc(fraude_par_boutique))
+   fraude_par_ville %>% slice_max(fraude_par_boutique,n=3)
+  
+   #permet de montrer les montant moyen des fraudes par ville 
+   data %>%
+     filter(Fraud_Flag == 1) %>%
+     group_by(Location) %>%
+     summarise(montant_moyen_fraude = mean(Purchase_Amount, na.rm = TRUE)) %>%
+     arrange(desc(montant_moyen_fraude))
+  
+  #on verifie s' il y a une indépendance entre fraude et le type du store
+  
+  tab <- table(data$Fraud_Flag, data$store_type)
+  chisq.test(tab)
+  
+#test d'indépendance entre la fidélité et les fraudes
+  chisq.test(table(data$Customer_Loyalty_Tier, data$Fraud_Flag))
+  
+  #un nuage de points representant les transaction et les fraudes
+  plot(data$Purchase_Amount, col = ifelse(data$Fraud_Flag == 1, "red", "black"))
+  
+# Sert à tester la normalité d'une distribution 
+shapiro.test(data$Customer_Age)
+shapiro.test(data$Purchase_Amount)
+shapiro.test(data$Footfall_Count)
+
+ #vu que il n'y a pas de normalité on utilisera un test de wilcox pour voir s'il y a une différence entre le montant  des achats frauduleux et les autres 
+
+wilcox.test(Purchase_Amount ~ Fraud_Flag, data = data)
+  
+
+#test de correlation entre l'affluence et les fraudes
+  cor.test(data$Footfall_Count, data$Fraud_Flag)
+  #test de correlation entre l'age et les fraudes
+   cor.test(data$Customer_Age, data$Fraud_Flag)
+
+   
+   
+
+   
+
+
+   
+   
